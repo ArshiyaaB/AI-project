@@ -1,0 +1,174 @@
+##Training:
+
+from google.colab import drive
+drive.mount('/content/gdrive')
+import json
+with open('/content/gdrive/MyDrive/intents.JSON') as json_file:# imoring dataset dataset
+    intents = json.load(json_file)
+#preprocessing dataset using nltk
+words=[]
+classes=[]
+documents=[]
+ignore_letters=['?','!','.',',']#punctuations are ignored
+"""The code then iterates over each intent in the intents dictionary, and for each intent, it iterates over the patterns.For each pattern, the nltk.word_tokenize() method is used to tokenize the text into a list of words."""
+for intent in intents['intents']:
+  for pattern in intent['patterns']:
+    word_list=nltk.word_tokenize(pattern)
+    words.extend(word_list)
+    documents.append((word_list,intent['tag']))
+    if intent['tag'] not in classes:
+      classes.append(intent['tag'])
+"""The code first uses a lemmatizer to lemmatize each word in the words list, removing any words that are in the ignore_letters list. A lemmatizer reduces words to their base form, such as reducing "running" and "ran" to "run""""
+
+words =[lemmatizer.lemmatize(word) for word in words if word not in ignore_letters]
+words = sorted(set(words))
+classes=sorted(set(classes))
+pickle.dump(words,open('/content/gdrive/MyDrive/words.pkl','wb'))
+pickle.dump(classes,open('/content/gdrive/MyDrive/classes.pkl','wb'))
+
+"""training=[]: Initialize an empty list to hold the training data.
+output_empty=[0]*len(classes): Create a list of zeros with length equal to the number of classes in the dataset. This will be used later to create the one-hot encoded output vectors for each training example.
+for document in documents: ...: Iterate over each document in the dataset.
+bag=[]: Initialize an empty list to hold the bag-of-words vector for the current document.
+word_patterns=document[0]: Extract the word patterns (i.e., vocabulary) for the current document from the first element of the tuple (document, label).
+words = [lemmatizer.lemmatize(word) for word in words if word and word not in ignore_letters]: Tokenize and lemmatize the words in the current document, and remove any stopwords (i.e., words in ignore_letters).
+for word in words: ...: Iterate over each word in the preprocessed list of words.
+bag.append(1) if word in word_patterns else bag.append(0): Add a 1 to the bag-of-words vector if the current word is in the word patterns for the current document, and a 0 otherwise.
+output_row=list(output_empty): Create a new list that is a copy of output_empty.
+output_row[classes.index(document[1])]=1: Set the value at the index corresponding to the current document's label to 1, creating a one-hot encoded output vector.
+training.append([bag,output_row]): Append the bag-of-words vector and one-hot encoded output vector to the training list.
+random.shuffle(training): Shuffle the training data randomly to avoid any order bias during training.
+training=np.array(training): Convert the training list to a NumPy array for easier manipulation.
+train_x=list(training[:,0]): Create a list of the bag-of-words vectors for each training example.
+train_y=list(training[:,1]): Create a list of the one-hot encoded output vectors for each training example."""
+
+training=[]
+output_empty=[0]*len(classes)
+
+for document in documents:
+  bag=[]
+  word_patterns=document[0]
+  words = [lemmatizer.lemmatize(word) for word in words if word and word not in ignore_letters]
+  for word in words:
+    bag.append(1) if word in word_patterns else bag.append(0)
+
+  output_row=list(output_empty)
+  output_row[classes.index(document[1])]=1
+  training.append([bag,output_row])
+
+random.shuffle(training)
+training=np.array(training)
+
+train_x=list(training[:,0])
+train_y=list(training[:,1])
+"""model=Sequential(): Create a new sequential neural network model.
+model.add(Dense(128,input_shape=(len(train_x[0]),),activation='relu')): Add a fully connected dense layer with 128 units, specifying the input shape as the length of the bag-of-words vector for each training example. The activation function used is ReLU.
+model.add(Dropout(0.5)): Add a dropout layer with a rate of 0.5 to prevent overfitting during training.
+model.add(Dense(64,activation='relu')): Add another fully connected dense layer with 64 units and ReLU activation.
+model.add(Dropout(0.5)): Add another dropout layer with a rate of 0.5.
+model.add(Dense(len(train_y[0]),activation='softmax')): Add a final fully connected dense layer with units equal to the number of classes in the dataset, and softmax activation to output probabilities for each class.
+sgd=SGD(learning_rate=0.01,decay=1e-6,momentum=0.9,nesterov=True): Create a stochastic gradient descent optimizer with a learning rate of 0.01, decay rate of 1e-6, momentum of 0.9, and Nesterov momentum enabled.
+model.compile(loss='categorical_crossentropy',optimizer=sgd,metrics=['accuracy']): Compile the model with categorical cross-entropy loss, the SGD optimizer defined above, and accuracy as the evaluation metric.
+hist = model.fit(np.array(train_x),np.array(train_y),epochs=200,batch_size=5,verbose=1): Train the model on the preprocessed training data, with a maximum of 200 epochs and a batch size of 5. The verbose parameter set to 1 will display the training progress during each epoch.
+model.save('/content/gdrive/MyDrive/chatbotmodel.h5', hist): Save the trained model and its training history to the specified file path."""
+model=Sequential()
+model.add(Dense(128,input_shape=(len(train_x[0]),),activation='relu'))
+model.add(Dropout(0.5))
+model.add(Dense(64,activation='relu'))
+model.add(Dropout(0.5))
+model.add(Dense(len(train_y[0]),activation='softmax'))
+
+sgd=SGD(learning_rate=0.01,decay=1e-6,momentum=0.9,nesterov=True)
+model.compile(loss='categorical_crossentropy',optimizer=sgd,metrics=['accuracy'])
+hist = model.fit(np.array(train_x),np.array(train_y),epochs=200,batch_size=5,verbose=1)
+model.save('/content/gdrive/MyDrive/chatbotmodel.h5', hist)
+print('Training Done')
+
+
+Testing:
+import nltk
+nltk.download('punkt')
+nltk.download('wordnet')
+nltk.download('omw-1.4')
+!pip install keras==2.1.0
+import random
+import numpy as np
+import json
+import pickle
+from nltk.stem import WordNetLemmatizer
+from tensorflow.keras.models import load_model
+lemmatizer=WordNetLemmatizer()
+
+with open('/content/gdrive/MyDrive/intents.JSON') as json_file:
+    intents = json.load(json_file)
+
+words=pickle.load(open('/content/gdrive/MyDrive/words.pkl','rb'))
+classes=pickle.load(open('/content/gdrive/MyDrive/classes.pkl','rb'))
+model=load_model('/content/gdrive/MyDrive/chatbotmodel.h5')
+
+"""clean_up_sentence which tokenizes a sentence and lemmatizes each word in the sentence. 
+sentence_words=nltk.word_tokenize(sentence): Tokenize the input sentence into a list of words using the word_tokenize function from the Natural Language Toolkit (NLTK) library.
+sentence_words=[lemmatizer.lemmatize(word) for word in sentence_words]: For each word in the list of tokenized words, lemmatize the word using the WordNet lemmatizer lemmatizer (presumably defined earlier in the code). The resulting list of lemmatized words is returned."""
+
+def clean_up_sentence(sentence):
+  sentence_words=nltk.word_tokenize(sentence)
+  sentence_words=[lemmatizer.lemmatize(word) for word in sentence_words]
+  return sentence_words
+"""bag_of_words which takes in a sentence, tokenizes it and creates a bag-of-words representation of the sentence
+sentence_words=clean_up_sentence(sentence): Tokenize and lemmatize the input sentence using the clean_up_sentence function defined earlier in the code.
+bag=[0]*len(words): Create a list of zeros with the same length as the global list of words defined earlier in the code.
+for w in sentence_words: ...: Loop over each word in the tokenized sentence.
+for i,word in enumerate(words): ...: For each word in the global list of words, check if it matches the current word in the sentence. If so, set the corresponding element in the bag-of-words vector to 1.
+return np.array(bag): Convert the bag-of-words vector to a numpy array and return it."""
+def bag_of_words(sentence):
+  sentence_words=clean_up_sentence(sentence)
+  bag=[0]*len(words)
+  for w in sentence_words:
+    for i,word in enumerate(words):
+      if word == w:
+        bag[i]=1
+  return np.array(bag)
+
+"""predict_class that takes in a sentence as input, uses the bag_of_words function to convert the sentence to a bag-of-words representation, and then uses the trained model to predict the intent of the sentence
+bow=bag_of_words(sentence): Convert the input sentence to a bag-of-words representation using the bag_of_words function defined earlier in the code.
+res=model.predict(np.array([bow]))[0]: Use the trained model to predict the intent of the input sentence, based on the bag-of-words representation of the sentence. The resulting array res contains the predicted probabilities for each class.
+ERROR_THRESHOLD=0.25: Define a threshold for the predicted probabilities below which the model's output will be considered uncertain or irrelevant.
+results=[[i,r] for i,r in enumerate(res) if r> ERROR_THRESHOLD]: Create a list results of tuples, where each tuple contains the index and predicted probability of a class for which the predicted probability is above the ERROR_THRESHOLD.
+results.sort(key=lambda x:x[1],reverse=True): Sort the list results in descending order based on the predicted probabilities, so that the most probable class comes first.
+return_list=[]: Create an empty list return_list to hold the final output.
+for r in results: ...: Loop over each tuple in the sorted list of results.
+return_list.append({'intent': classes[r[0]],'probability':str(r[1])}): For each tuple, append a dictionary to the return_list containing the predicted intent (retrieved from the global classes list) and the corresponding probability (converted to a string).
+return return_list: Return the final list of predicted intents and probabilities."""
+def predict_class(sentence):
+  bow=bag_of_words(sentence)
+  res=model.predict(np.array([bow]))[0]
+  ERROR_THRESHOLD=0.25
+  results=[[i,r] for i,r in enumerate(res) if r> ERROR_THRESHOLD]
+
+  results.sort(key=lambda x:x[1],reverse=True)
+  return_list=[]
+  for r in results:
+    return_list.append({'intent': classes[r[0]],'probability':str(r[1])})
+  return return_list
+""" function get_response that takes in two arguments:
+
+intents_list: a list of predicted intents and their corresponding probabilities, generated by the predict_class function.
+intents_json: a JSON file containing a list of predefined intents and their corresponding responses.
+The function first retrieves the predicted intent from the intents_list, and then searches for a matching intent in the intents_json file. 
+Once a matching intent is found, a random response from the list of responses associated with that intent is chosen and returned as the output."""
+def get_response(intents_list,intents_json):
+  tag=intents_list[0]['intent']
+  list_of_intents=intents_json['intents']
+  for i in list_of_intents:
+    if i['tag']==tag:
+      result=random.choice(i['responses'])
+      break
+  return result
+
+print("Hi \nhow,may i help you.")
+
+while True:
+  message=input("")
+  ints=predict_class(message)
+  print(get_response(ints,intents))
+
